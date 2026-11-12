@@ -276,14 +276,40 @@ app.get('/api/audio', async (req, res) => {
         `[Karaoke Audio Resolver] Matched "${title} - ${artist}" (${targetDuration}s) -> "${bestVideo.title}" (${bestVideo.seconds}s)`
       );
 
-      const resolvedOut = await ytdlp(bestVideo.url, {
-        getUrl: true,
-        format: 'bestaudio[ext=m4a]/bestaudio',
-        noWarnings: true,
-        noCheckCertificates: true
-      });
+      try {
+        const resolvedOut = await ytdlp(bestVideo.url, {
+          getUrl: true,
+          format: 'bestaudio[ext=m4a]/bestaudio',
+          noWarnings: true,
+          noCheckCertificates: true
+        });
+        directAudioUrl = String(resolvedOut).trim().split('\n')[0];
+      } catch (ytdlpErr) {
+        console.warn('[Karaoke Audio Resolver] yt-dlp failed on cloud IP, trying Saavn fallback:', ytdlpErr.message);
+        const saavnRes = await fetch(
+          `https://saavn.sumit.co/api/search/songs?query=${encodeURIComponent(`${title} ${artist}`)}&limit=5`
+        );
+        if (saavnRes.ok) {
+          const saavnData = await saavnRes.json();
+          const tracks = saavnData?.data?.results || [];
+          if (tracks.length > 0) {
+            tracks.sort(
+              (a, b) => Math.abs((a.duration || 0) - targetDuration) - Math.abs((b.duration || 0) - targetDuration)
+            );
+            const dlUrls = tracks[0].downloadUrl || [];
+            const best =
+              dlUrls.find((d) => d.quality === '320kbps') ||
+              dlUrls.find((d) => d.quality === '160kbps') ||
+              dlUrls[dlUrls.length - 1];
+            directAudioUrl = best?.url || null;
+          }
+        }
+      }
 
-      directAudioUrl = String(resolvedOut).trim().split('\n')[0];
+      if (!directAudioUrl) {
+        return res.redirect('/audio/song1.mp3');
+      }
+
       streamUrlCache.set(cacheKey, {
         url: directAudioUrl,
         expiresAt: Date.now() + 25 * 60 * 1000
@@ -349,6 +375,10 @@ app.get('/api/lyrics/:lrclibId', async (req, res) => {
     console.error('[API Lyrics Error]:', err.message);
     res.status(500).json({ error: 'Failed to fetch synced lyrics' });
   }
+});
+
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok' });
 });
 
 app.get('/remote', (req, res) => {
