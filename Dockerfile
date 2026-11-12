@@ -3,6 +3,7 @@ FROM node:20-bookworm-slim
 # Install python3, ffmpeg, and ca-certificates required by yt-dlp on Linux
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
+    python-is-python3 \
     ffmpeg \
     ca-certificates \
     curl \
